@@ -1,6 +1,6 @@
 # `n$` - local.js service wrapper to jQuery
 
-Uses HTTPL requests to stream jQuery RPC operations between VM environments. The common use-case is to run the nQuery server on a page, then use the nQuery client in a Web Worker or RTC peer to remotely manipulate the DOM. Uses region-sandboxing and function whitelisting to control what clients can access.
+Uses HTTPL requests to stream jQuery RPC operations between VM environments. The common use-case is to run the nQuery server on a page, then use the nQuery client in a Worker or RTC peer to remotely manipulate the DOM. Uses region-sandboxing and function whitelisting to control what clients can access.
 
 Depends on jquery and local.js.
 
@@ -16,15 +16,16 @@ local.spawnWorker('myworker.js', nQueryService);
 // ^ incoming requests by myworker.js will be handled by nQueryService
 
 var regionPath = nQueryService.addRegion('#worker-content');
-nQueryService.removeRegion(regionPath);
 console.log(regionPath); // "/regions/1"
+
+nQueryService.removeRegion(regionPath);
 
 regionPath = nQueryService.addRegion('#worker-content', { token: 1251098671093850 });
 console.log(regionPath); // "/regions/2?token=1251098671093850"
 // regions with access tokens will forbid requests without the correct token query param
 ```
 
-From a worker that's calling out to an nQuery server:
+From myworker.js:
 
 ```javascript
 var n$ = new nQuery.Client('httpl://host.page/regions/1');
@@ -77,9 +78,9 @@ $('li').eq(2).css('background-color', 'red');
 // Translates to
 POST /regions/1
 Content-Type: application/json-stream
-['find', 'li']
-['eq', 2]
-['css', 'background-color', 'red']
+["find", "li"]
+["eq", 2]
+["css", "background-color", "red"]
 
 // Which receives
 200 OK
@@ -93,7 +94,7 @@ The response stream includes direct or representative return values. Traversals 
 
 Persistant transactions (requests) can be used to make continuous updates.
 
-```application/javascript
+```javascript
 // Persistant transactions
 var num_updates = 0;
 var $foo = n$('.foo', { persist: true });
@@ -117,8 +118,8 @@ Event registration works like other operations, but it generates a new SSE event
 // This request
 POST /regions/1
 Content-Type: application/json-stream
-['find', '.foo a']
-['on', 'click']
+["find", ".foo a"]
+["on", "click"]
 
 // Receives
 200 OK
@@ -136,7 +137,11 @@ n$('.foo a').on('click', function(e) { console.log(e); /* => { ... } */ });
 
 ## application/json-stream
 
-This media type is a set of newline-delimited (`\r\n`) JSON strings.
+This media type is a set of CLRF-delimited (`\r\n`) JSON strings. It's used to serialize the operations and return values.
+
+## API
+
+todo
 
 
 ## Whitelisted Operations
