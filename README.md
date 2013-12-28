@@ -1,19 +1,109 @@
-# Networked GUI Access: the DOM Web API and `n$` Library
+# `n$` - local.js service wrapper to jQuery
 
-## Overview
+Uses HTTPL requests to stream jQuery RPC operations between VM environments. The common use-case is to run the nQuery server on a page, then use the nQuery client in a Web Worker or RTC peer to remotely manipulate the DOM. Uses region-sandboxing and function whitelisting to control what clients can access in the DOM.
 
-Networked access to the document enables workers and WebRTC peers to share control of the GUI via messaging rather than entering the GUI thread. This access is managed by the DOM Web API, a service interface over jQuery. Its goal is to mirror the experience of jQuery (semantically, pragmatically) without hiding the details of the network (particularly latency, which manifests as async) so that neither control nor robustness are sacrificed.
+Depends on jquery and local.js.
 
-jQuery API uses chains of ordered operations, which means the ops can't be sent individually as requests (seperate requests have no delivery-order guarantees). Instead, the ops must be streamed in the request body, which is an ordered transaction. Ending a request closes the transaction and releases any related state (eg the traversal position). For instance:
+**In progress - the access control is unfinished. Going to take some time to get it secure. Handle with the appropriate ten-foot poles.**
+
+## Examples
+
+From a page constructing the nQuery server:
+
+```javascript
+var nQueryService = new nQuery.Server();
+local.spawnWorker('myworker.js', nQueryService);
+// ^ incoming requests by myworker.js will be handled by nQueryService
+
+var regionPath = nQueryService.addRegion('#worker-content');
+console.log(regionPath); // "/regions/1"
+nQueryService.removeRegion(regionPath);
+
+regionPath = nQueryService.addRegion('#worker-content', { token: 1251098671093850 });
+console.log(regionPath); // "/regions/1?token=1251098671093850"
+// regions with access tokens will forbid requests without the correct token query param
+```
+
+From a worker that's calling out to an nQuery server:
+
+```javascript
+var n$ = new nQuery.Client('httpl://host.page/regions/1');
+// -or-
+var n$ = new nQuery.Client('httpl://host.page/regions/1?token=1251098671093850');
+
+// Traversal and manipulation
+n$('div')
+  .eq(3)
+  .html('<p class="foo">Hello, world</p>')
+  .css('background', 'red');
+
+// Reading return values with the optional callback
+n$('.foo').css('background', function(bgs) {
+  console.log(bgs); // ['red']
+});
+n$('.foo').css('background', 'green', function(numAffected) {
+  console.log(numAffected); // 1
+});
+
+// Persistant transactions
+var num_updates = 0;
+var $foo = n$('.foo', { persist: true });
+var interval = setInterval(function() {
+	// Do a "clock" output for five seconds, then close the transaction
+	$foo.text(''+new Date());
+	if (++num_updates == 5) {
+		clearInterval(interval);
+		$foo.closeTxn();
+	}
+}, 1000);
+
+// Events
+n$('.foo')
+	.on('click', function(e) {
+		console.log(e); /* =>
+		{
+			altKey: false
+			bubbles: true
+			button: 0
+			cancelable: true
+			clientX: 94
+			clientY: 330
+			ctrlKey: false
+			data: undefined
+			eventPhase: 3
+			metaKey: false
+			offsetX: 94
+			offsetY: 330
+			pageX: 94
+			pageY: 330
+			screenX: 94
+			screenY: 415
+			shiftKey: false
+			timeStamp: 1388267407725
+			type: "click"
+			which: 1
+		} ^ notice that unpassable references such as `target` are not included
+		*/
+	}, function(eventStreamURI) {
+		console.log(eventStreamURI); // "httpl://host.page/regions/1/evt/1?token=...."
+		n$.off(eventStreamURI); // stop listening
+	});
+```
+
+## How It Works
+
+Networked access to the document enables workers and WebRTC peers to share control of the GUI via messaging rather than entering the GUI thread.
+
+The jQuery API uses chains of ordered operations, which means the ops can't be sent individually as requests (seperate requests have no delivery-order guarantees). Instead, the ops are streamed in the request body. Ending a request closes the transaction and releases any related state (eg the traversal position). For instance:
 
 ```
-// This example
-$('li', myarea).eq(2).css('background-color', 'red');
+// This jQuery command
+$('li').eq(2).css('background-color', 'red');
 
 // Translates to
-POST /myarea
+POST /regions/1
 Content-Type: application/json-stream
-['$', 'li']
+['find', 'li']
 ['eq', 2]
 ['css', 'background-color', 'red']
 
@@ -22,118 +112,36 @@ Content-Type: application/json-stream
 Content-Type: application/json-stream
 5
 1
-undefined
+1
 ```
 
-The response entity includes a stream of direct or representative return values. Traversals are an example of representative returns; they get back the numeric length of the set created by the traversal (rather than the set itself, which contains non-transferrable references to DOM elements). The return values are written to the response stream as the operations are run, so long-running transactions (requests) can be used to make continuous updates.
-
-```javascript
-// An example of continuously-streamed operations:
-var clockInterval;
-var clockReq = new local.Request({ method: 'POST', url: 'httpl://dom/myarea', headers: { 'Content-Type': 'application/json-stream' }, stream: true });
-var clockResPromise = local.dispatch(clockReq);
-
-clockReq.write(['$', '#my_clock']);
-clockInterval = setInterval(function() { clockReq.write(['html', getTime()]); }, 1000);
-
-clockResPromise.then(function(clockRes) {
-	var nchunk = 0;
-	clockRes.on('data', function(chunk) {
-		// Did the first op (the selector) succeed (find the element)?
-		if (nchunk === 0 && chunk == '0') {
-			// Failure, abort
-			clearInterval(clockInterval);
-			clockReq.end();
-		}
-		nchunk++;
-	});
-});
-```
-
-Even in the simpler, non-streaming case, this code has a lot of boilerplate which can be hidden behind a jQuery-like API called `n$`. The network exchange - sending the requests and deferring for responses - will be simplified, but not abstracted away: the `write` function flushes the queue of operations into the stream, and the `end` function does a write and closes the request.
-
-```javascript
-// The 'li' example above, rewritten:
-n$('li').eq(2).css('background-color', 'red').end();
-
-// The clock example above, rewritten:
-var clockInterval;
-var $clock = n$('#my_clock').write(function(numMyClocks) {
-	// This cb is called with the return values as arguments
-	if (numMyClocks == 0) {
-		clearInterval(clockInterval);
-		$clock.end();
-	}
-});
-clockInterval = setInterval(function() {
-	$clock.html(getTime()).write();
-}, 1000);
-```
+The response entity includes a stream of direct or representative return values. Traversals are an example of representative returns; they get back the numeric length of the set created by the traversal (rather than the set itself, which contains non-transferrable references to DOM elements). The return values are written to the response stream as the operations are run, so persistant transactions (requests) can be used to make continuous updates.
 
 
 ## Event Listening
 
-Events are a key function of UIs. Their registration is handled in op transactions, as in the case of manipulations and traversals. Their response value, however, is a URI representing the [SSE](en.wikipedia.org/wiki/Server-sent_events) event-stream which will receive the events. It's up to the consumer to subscribe afterward. In the standard network API, this process is:
+Event registration works like other operations, but it generates a new SSE event-stream resource to send the events. The return value, then, is the URI of that event stream.
 
-```javascript
-// An example of registering event-listeners
-var body = [
-	['$', '.foo a'],
-	['on', 'click']
-];
-local.dispatch({ method: 'POST', body: body, url: 'httpl://dom/myarea', headers: { 'Content-Type': 'application/json-stream' }})
-	.then(function(res) {
-		var nElements = res.body[0];
-		var eventsUri = res.body[1];
-		local.subscribe(eventsUri).on('click', function(e) {
-			console.log(e.data); // { ... }
-		});
-	});
+```
+// This request
+POST /regions/1
+Content-Type: application/json-stream
+['find', '.foo a']
+['on', 'click']
+
+// Receives
+200 OK
+Content-Type: application/json-stream
+1
+"/regions/1/evt/1"
 ```
 
-The `n$` API abstracts this into a single call:
+The `n$` client auto-subscribes to the URI with the given cb parameter.
 
 ```javascript
 // The example above, rewritten:
-n$('.foo a')
-	.on('click', function(e) { console.log(e.data); /* => { ... } */ })
-	.end();
+n$('.foo a').on('click', function(e) { console.log(e); /* => { ... } */ });
 ```
-
-The listener can managed by its URI:
-
-```javascript
-// The example above, with unregistration after 5 seconds:
-n$('.foo a')
-	.on('click', function(e) { console.log(e.data); /* => { ... } */ })
-	.end(function(nEls, listenerUri) {
-		setTimeout(function() {
-			n$.off(listenerUri);
-		}, 5000);
-	});
-```
-
-Or by traversal context:
-
-```javascript
-// The example above, with unregistration after 5 seconds, rewritten:
-n$('.foo a')
-	.on('click', function(e) { console.log(e.data); /* => { ... } */ })
-	.end();
-setTimeout(function() {
-	n$('.foo a').off('click').end();
-}, 5000);
-```
-
-
-## Security / Mediated Access
-
-Robust and usable access-control is another key requirement of GIDE. The most unique experiences of a networked GUI will emerge from cooperative resource-management between programs (drawing entities on a game canvas, adding features to an editor, etc). However, creating an effective universal policy would be too complex for GIDE to implement. Instead, this requirement is "punted."
-
-DOM Web API's access controls are course-grained: Web consumers have their access constrained within specific nodes, and there is no means to mediate shared access by multiple consumers to a single node, or to control the capabilites of any consumer. This is instead relegated to userland (workers and peers) in which programs can offer high-level access to the GUI and implement access controls according to the program's domain. The userland services act as effective proxies to the DOM Web API. This can result in finer-grained DOM Manager (DM) programs, if the users need them.
-
-Specifics of how the user will configure access control between userland programs will be explained in another document.
-
 
 ## application/json-stream
 
