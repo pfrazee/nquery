@@ -1,10 +1,10 @@
 # `n$` - local.js service wrapper to jQuery
 
-Uses HTTPL requests to stream jQuery RPC operations between VM environments. The common use-case is to run the nQuery server on a page, then use the nQuery client in a Web Worker or RTC peer to remotely manipulate the DOM. Uses region-sandboxing and function whitelisting to control what clients can access in the DOM.
+Uses HTTPL requests to stream jQuery RPC operations between VM environments. The common use-case is to run the nQuery server on a page, then use the nQuery client in a Web Worker or RTC peer to remotely manipulate the DOM. Uses region-sandboxing and function whitelisting to control what clients can access.
 
 Depends on jquery and local.js.
 
-**In progress - the access control is unfinished. Going to take some time to get it secure. Handle with the appropriate ten-foot poles.**
+**In progress - the access control is unfinished. Handle with the appropriate ten-foot poles.**
 
 ## Examples
 
@@ -16,11 +16,11 @@ local.spawnWorker('myworker.js', nQueryService);
 // ^ incoming requests by myworker.js will be handled by nQueryService
 
 var regionPath = nQueryService.addRegion('#worker-content');
-console.log(regionPath); // "/regions/1"
 nQueryService.removeRegion(regionPath);
+console.log(regionPath); // "/regions/1"
 
 regionPath = nQueryService.addRegion('#worker-content', { token: 1251098671093850 });
-console.log(regionPath); // "/regions/1?token=1251098671093850"
+console.log(regionPath); // "/regions/2?token=1251098671093850"
 // regions with access tokens will forbid requests without the correct token query param
 ```
 
@@ -29,7 +29,7 @@ From a worker that's calling out to an nQuery server:
 ```javascript
 var n$ = new nQuery.Client('httpl://host.page/regions/1');
 // -or-
-var n$ = new nQuery.Client('httpl://host.page/regions/1?token=1251098671093850');
+var n$ = new nQuery.Client('httpl://host.page/regions/2?token=1251098671093850');
 
 // Traversal and manipulation
 n$('div')
@@ -38,16 +38,16 @@ n$('div')
   .css('background', 'red');
 
 // Reading return values with the optional callback
-n$('.foo').css('background', function(bgs) {
-  console.log(bgs); // ['red']
-});
 n$('.foo').css('background', 'green', function(numAffected) {
   console.log(numAffected); // 1
+});
+n$('.foo').css('background', function(bgs) {
+  console.log(bgs); // ['green']
 });
 
 // Events
 n$('.foo').on('click', onClick, function(eventStreamURI) {
-	console.log(eventStreamURI); // "httpl://host.page/regions/1/evt/1?token=...."
+	console.log(eventStreamURI); // "httpl://host.page/regions/2/evt/1?token=...."
 	n$.off(eventStreamURI); // stop listening
 });
 function onClick(e) {
@@ -56,31 +56,19 @@ function onClick(e) {
 		altKey: false
 		bubbles: true
 		button: 0
-		cancelable: true
-		clientX: 94
-		clientY: 330
-		ctrlKey: false
-		data: undefined
-		eventPhase: 3
-		metaKey: false
-		offsetX: 94
-		offsetY: 330
-		pageX: 94
-		pageY: 330
-		screenX: 94
-		screenY: 415
-		shiftKey: false
-		timeStamp: 1388267407725
+		...
 		type: "click"
 		which: 1
 	} */
-	// notice that unpassable references such as `target` are not included
+	// note that unpassable references such as `target` are not included
 }
 ```
 
 ## How It Works
 
-Networked access to the document enables workers and WebRTC peers to share the DOM via messaging. Ops are streamed in the request body, and the op return values are streamed in the response. Ending a request closes the transaction and releases any related state (eg the traversal position). For instance:
+Operations are serialized and streamed through the request body, which the server reads and checks against a whitelist before executing. Traversals are checked to make sure they remain within the allowed region. Return values of the operations are serialized into the response body.
+
+The request stream's lifetime is considered a transaction which maintains a traversal position. Ending the request closes the transaction and releases that state.
 
 ```
 // This jQuery command
@@ -101,7 +89,9 @@ Content-Type: application/json-stream
 1
 ```
 
-The response entity includes a stream of direct or representative return values. Traversals are an example of representative returns; they get back the numeric length of the set created by the traversal (rather than the set itself, which contains non-transferrable references to DOM elements). The return values are written to the response stream as the operations are run, so persistant transactions (requests) can be used to make continuous updates.
+The response stream includes direct or representative return values. Traversals are an example of representative returns: they get back the numeric length of the set created by the traversal (rather than the set itself, which contains non-transferrable references). The return values are written to the response stream as the operations are run.
+
+Persistant transactions (requests) can be used to make continuous updates.
 
 ```application/javascript
 // Persistant transactions
@@ -149,7 +139,9 @@ n$('.foo a').on('click', function(e) { console.log(e); /* => { ... } */ });
 This media type is a set of newline-delimited (`\r\n`) JSON strings.
 
 
-## Supported jQuery Operations
+## Whitelisted Operations
+
+This list is still being evaluated.
 
 ### manip
 
@@ -206,7 +198,6 @@ wrapInner
 
 ### traversal
 
-$
 addBack
 andSelf
 children
@@ -249,7 +240,7 @@ unbind
 undelegate
 
 
-## Unsupported ops
+## Blacklisted ops
 
 
 ### general
