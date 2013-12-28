@@ -45,56 +45,42 @@ n$('.foo').css('background', 'green', function(numAffected) {
   console.log(numAffected); // 1
 });
 
-// Persistant transactions
-var num_updates = 0;
-var $foo = n$('.foo', { persist: true });
-var interval = setInterval(function() {
-	// Do a "clock" output for five seconds, then close the transaction
-	$foo.text(''+new Date());
-	if (++num_updates == 5) {
-		clearInterval(interval);
-		$foo.closeTxn();
-	}
-}, 1000);
-
 // Events
-n$('.foo')
-	.on('click', function(e) {
-		console.log(e); /* =>
-		{
-			altKey: false
-			bubbles: true
-			button: 0
-			cancelable: true
-			clientX: 94
-			clientY: 330
-			ctrlKey: false
-			data: undefined
-			eventPhase: 3
-			metaKey: false
-			offsetX: 94
-			offsetY: 330
-			pageX: 94
-			pageY: 330
-			screenX: 94
-			screenY: 415
-			shiftKey: false
-			timeStamp: 1388267407725
-			type: "click"
-			which: 1
-		} ^ notice that unpassable references such as `target` are not included
-		*/
-	}, function(eventStreamURI) {
-		console.log(eventStreamURI); // "httpl://host.page/regions/1/evt/1?token=...."
-		n$.off(eventStreamURI); // stop listening
-	});
+n$('.foo').on('click', onClick, function(eventStreamURI) {
+	console.log(eventStreamURI); // "httpl://host.page/regions/1/evt/1?token=...."
+	n$.off(eventStreamURI); // stop listening
+});
+function onClick(e) {
+	console.log(e); /* =>
+	{
+		altKey: false
+		bubbles: true
+		button: 0
+		cancelable: true
+		clientX: 94
+		clientY: 330
+		ctrlKey: false
+		data: undefined
+		eventPhase: 3
+		metaKey: false
+		offsetX: 94
+		offsetY: 330
+		pageX: 94
+		pageY: 330
+		screenX: 94
+		screenY: 415
+		shiftKey: false
+		timeStamp: 1388267407725
+		type: "click"
+		which: 1
+	} */
+	// notice that unpassable references such as `target` are not included
+}
 ```
 
 ## How It Works
 
-Networked access to the document enables workers and WebRTC peers to share control of the GUI via messaging rather than entering the GUI thread.
-
-The jQuery API uses chains of ordered operations, which means the ops can't be sent individually as requests (seperate requests have no delivery-order guarantees). Instead, the ops are streamed in the request body. Ending a request closes the transaction and releases any related state (eg the traversal position). For instance:
+Networked access to the document enables workers and WebRTC peers to share the DOM via messaging. Ops are streamed in the request body, and the op return values are streamed in the response. Ending a request closes the transaction and releases any related state (eg the traversal position). For instance:
 
 ```
 // This jQuery command
@@ -117,6 +103,21 @@ Content-Type: application/json-stream
 
 The response entity includes a stream of direct or representative return values. Traversals are an example of representative returns; they get back the numeric length of the set created by the traversal (rather than the set itself, which contains non-transferrable references to DOM elements). The return values are written to the response stream as the operations are run, so persistant transactions (requests) can be used to make continuous updates.
 
+```application/javascript
+// Persistant transactions
+var num_updates = 0;
+var $foo = n$('.foo', { persist: true });
+var interval = setInterval(function() {
+    // Do a "clock" output for five seconds, then close the transaction
+    $foo.text(''+new Date());
+    if (++num_updates == 5) {
+        clearInterval(interval);
+        $foo.closeTxn();
+    }
+}, 1000);
+```
+
+By default, however, where `persist` is false, the transaction is automatically closed on next tick.
 
 ## Event Listening
 
