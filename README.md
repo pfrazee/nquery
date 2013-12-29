@@ -28,9 +28,9 @@ console.log(regionPath); // "/regions/2?token=1251098671093850"
 From myworker.js:
 
 ```javascript
-var n$ = new nQuery.Client('httpl://host.page/regions/1');
+var n$ = nQuery.client('httpl://host.page/regions/1');
 // -or-
-var n$ = new nQuery.Client('httpl://host.page/regions/2?token=1251098671093850');
+var n$ = nQuery.client('httpl://host.page/regions/2?token=1251098671093850');
 
 // Traversal and manipulation
 n$('div')
@@ -112,7 +112,7 @@ By default, however, where `persist` is false, the transaction is automatically 
 
 ## Event Listening
 
-Event registration works like other operations, but it generates a new SSE event-stream resource to send the events. The return value, then, is the URI of that event stream.
+Event registration works like other operations, but it generates a new SSE event-stream resource to send the events. The return value, then, is the path of that event stream.
 
 ```
 // This request
