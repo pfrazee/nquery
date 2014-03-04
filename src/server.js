@@ -27,18 +27,23 @@ Server.prototype.addRegion = function($el, opts) {
 	var region = {
 		id: id,
 		path: '/regions/'+id,
-		$el: $el.eq(0),
+		$el: $el,
 		token: opts.token
 	};
-	if (region.$el.length === 0) {
-		throw new Error('Region not found');
-	}
 	this.regions[region.path] = region;
 	this.nregions++;
 	return region.path + (opts.token ? ('?token='+opts.token) : '');
 };
 
+Server.prototype.setRegionEl = function(path, $el) {
+	path = path.split('?')[0]; // ditch query params, which may be given
+	if (path in this.regions) {
+		this.regions[path].$el = $el;
+	}
+};
+
 Server.prototype.removeRegion = function(path) {
+	path = path.split('?')[0]; // ditch query params, which may be given
 	if (path in this.regions) {
 		delete this.regions[path];
 	}
