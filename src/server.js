@@ -21,14 +21,13 @@ module.exports = Server;
 // Region management
 // -
 
-Server.prototype.addRegion = function(selector, opts) {
+Server.prototype.addRegion = function($el, opts) {
 	opts = opts || {};
 	var id = this.nregions;
 	var region = {
 		id: id,
 		path: '/regions/'+id,
-		$el: $(selector).eq(0),
-		selector: selector,
+		$el: $el.eq(0),
 		token: opts.token
 	};
 	if (region.$el.length === 0) {
@@ -58,7 +57,7 @@ Server.prototype.handleLocalRequest = function(req, res) {
 	for (var path in this.regions) {
 		var rel = 'item';
 		if (path == req.path) { rel += ' self'; }
-		res.headers['link'].push({ href: path+'{?token}', rel: rel, id: this.regions[path].id, title: 'Region: '+this.regions[path].selector });
+		res.headers['link'].push({ href: path+'{?token}', rel: rel, id: this.regions[path].id, title: 'Region #'+this.regions[path].id });
 	}
 
 	// Route

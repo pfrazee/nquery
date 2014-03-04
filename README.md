@@ -15,12 +15,12 @@ var nQueryService = new nQuery.Server();
 local.spawnWorker('myworker.js', nQueryService);
 // ^ incoming requests by myworker.js will be handled by nQueryService
 
-var regionPath = nQueryService.addRegion('#worker-content');
+var regionPath = nQueryService.addRegion($('#worker-content'));
 console.log(regionPath); // "/regions/1"
 
 nQueryService.removeRegion(regionPath);
 
-regionPath = nQueryService.addRegion('#worker-content', { token: 1251098671093850 });
+regionPath = nQueryService.addRegion($('#worker-content'), { token: 1251098671093850 });
 console.log(regionPath); // "/regions/2?token=1251098671093850"
 // regions with access tokens will forbid requests without the correct token query param
 ```

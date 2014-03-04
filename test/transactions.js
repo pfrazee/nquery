@@ -1,6 +1,6 @@
 var nQueryService = new nQuery.Server();
 local.addServer('nquery', nQueryService);
-var region1path = nQueryService.addRegion('#region1');
+var region1path = nQueryService.addRegion($('#region1'));
 var n$ = nQuery.client('httpl://nquery'+region1path);
 
 // html()
