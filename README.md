@@ -4,7 +4,7 @@ Uses HTTPL requests to stream jQuery RPC operations between VM environments. The
 
 Depends on jquery and local.js.
 
-**In progress - the access control is unfinished. Handle with the appropriate ten-foot poles.**
+**Not ready for production.** There needs to be some security analysis before this can be used in live software.
 
 ## Examples
 
